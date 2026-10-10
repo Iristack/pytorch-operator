@@ -1,0 +1,23 @@
+# Optional addition to the existing Operator RBAC when gang scheduling is used.
+# Change the binding namespace to arena-system for an Arena installation.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pytorch-operator-podgroups
+rules:
+  - apiGroups: [scheduling.incubator.k8s.io, scheduling.volcano.sh]
+    resources: [podgroups]
+    verbs: [get, create, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pytorch-operator-podgroups
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pytorch-operator-podgroups
+subjects:
+  - kind: ServiceAccount
+    name: pytorch-operator
+    namespace: kubeflow

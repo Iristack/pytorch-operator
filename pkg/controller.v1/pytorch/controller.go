@@ -41,6 +41,7 @@ import (
 	jobinformers "github.com/kubeflow/pytorch-operator/pkg/client/informers/externalversions"
 	jobinformersv1 "github.com/kubeflow/pytorch-operator/pkg/client/informers/externalversions/pytorch/v1"
 	joblisters "github.com/kubeflow/pytorch-operator/pkg/client/listers/pytorch/v1"
+	"github.com/kubeflow/pytorch-operator/pkg/scheduling"
 	"github.com/kubeflow/pytorch-operator/pkg/util"
 	"github.com/kubeflow/tf-operator/pkg/common/jobcontroller"
 	pylogger "github.com/kubeflow/tf-operator/pkg/logger"
@@ -108,6 +109,8 @@ type PyTorchController struct {
 	jobInformerSynced cache.InformerSynced
 
 	initContainerImage string
+	podGroupManager    *scheduling.Manager
+	podGroupBackend    string
 }
 
 // NewPyTorchController returns a new PyTorchJob controller.
@@ -131,7 +134,8 @@ func NewPyTorchController(
 	log.Info("Creating PyTorchJob controller")
 	// Create new PyTorchController.
 	pc := &PyTorchController{
-		jobClientSet: jobClientSet,
+		jobClientSet:    jobClientSet,
+		podGroupBackend: option.PodGroupBackend,
 	}
 
 	// Create base controller
@@ -377,6 +381,13 @@ func (pc *PyTorchController) reconcilePyTorchJobs(job *pyv1.PyTorchJob) error {
 		return err
 	}
 
+	if pc.gangEnabled(job) {
+		if err := pc.bindPodGroupBackend(job, pods); err != nil {
+			pc.Recorder.Eventf(job, v1.EventTypeWarning, "PodGroupBindingFailed", "%v", err)
+			return err
+		}
+	}
+
 	// If the PyTorchJob is terminated, delete all pods and services.
 	if isSucceeded(job.Status) || isFailed(job.Status) {
 		if err := pc.deletePodsAndServices(job, pods, services); err != nil {
@@ -387,8 +398,8 @@ func (pc *PyTorchController) reconcilePyTorchJobs(job *pyv1.PyTorchJob) error {
 			return err
 		}
 
-		if pc.Config.EnableGangScheduling {
-			if err := pc.DeletePodGroup(job); err != nil {
+		if pc.gangEnabled(job) {
+			if err := pc.deleteGangPodGroup(job); err != nil {
 				return err
 			}
 		}
@@ -458,8 +469,8 @@ func (pc *PyTorchController) reconcilePyTorchJobs(job *pyv1.PyTorchJob) error {
 			return err
 		}
 
-		if pc.Config.EnableGangScheduling {
-			if err := pc.DeletePodGroup(job); err != nil {
+		if pc.gangEnabled(job) {
+			if err := pc.deleteGangPodGroup(job); err != nil {
 				return err
 			}
 		}
@@ -475,11 +486,12 @@ func (pc *PyTorchController) reconcilePyTorchJobs(job *pyv1.PyTorchJob) error {
 			return err
 		}
 	} else {
-		if pc.Config.EnableGangScheduling {
+		if pc.gangEnabled(job) {
 			minAvailableReplicas := getTotalReplicas(job)
-			_, err := pc.SyncPodGroup(job, minAvailableReplicas)
+			err := pc.podGroupManager.Ensure(job, job.Annotations[scheduling.BackendAnnotation], minAvailableReplicas)
 			if err != nil {
-				logger.Warnf("Sync PodGroup %v: %v", job.Name, err)
+				pc.Recorder.Eventf(job, v1.EventTypeWarning, "PodGroupSyncFailed", "backend=%s: %v", job.Annotations[scheduling.BackendAnnotation], err)
+				return err
 			}
 		}
 

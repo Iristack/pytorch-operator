@@ -32,6 +32,7 @@ type ServerOption struct {
 	JSONLogFormat        bool
 	EnableGangScheduling bool
 	GangSchedulerName    string
+	PodGroupBackend      string
 	Namespace            string
 	MonitoringPort       int
 	ResyncPeriod         time.Duration
@@ -71,7 +72,8 @@ func (s *ServerOption) AddFlags(fs *flag.FlagSet) {
 		"Set true to use json style log format. Set false to use plaintext style log format")
 
 	fs.BoolVar(&s.EnableGangScheduling, "enable-gang-scheduling", false, "Set true to enable gang scheduling")
-	fs.StringVar(&s.GangSchedulerName, "gang-scheduler-name", "volcano", "The scheduler to gang-schedule tfjobs, defaults to volcano")
+	fs.StringVar(&s.PodGroupBackend, "podgroup-backend", "legacy", "PodGroup API backend: legacy or volcano")
+	fs.StringVar(&s.GangSchedulerName, "gang-scheduler-name", "volcano", "The scheduler to gang-schedule PyTorchJobs, defaults to volcano")
 
 	fs.IntVar(&s.MonitoringPort, "monitoring-port", 8443, `Endpoint port for displaying monitoring metrics`)
 
