@@ -20,6 +20,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/kubeflow/pytorch-operator/pkg/scheduling"
 	kubebatchclient "github.com/kubernetes-sigs/kube-batch/pkg/client/clientset/versioned"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/client-go/dynamic"
 	kubeinformers "k8s.io/client-go/informers"
 	kubeclientset "k8s.io/client-go/kubernetes"
 	restclientset "k8s.io/client-go/rest"
@@ -67,6 +69,10 @@ func Run(opt *options.ServerOption) error {
 	// Check if the -version flag was passed and, if so, print the version and exit.
 	if opt.PrintVersion {
 		version.PrintVersionAndExit(apiVersion)
+	}
+
+	if err := scheduling.Validate(opt.PodGroupBackend, opt.GangSchedulerName); err != nil {
+		return err
 	}
 
 	namespace := os.Getenv(pyv1.EnvKubeflowNamespace)
@@ -115,6 +121,12 @@ func Run(opt *options.ServerOption) error {
 
 	// Create pytorch controller.
 	tc := controller.NewPyTorchController(unstructuredInformer, kubeClientSet, kubeBatchClientSet, pytorchJobClientSet, kubeInformerFactory, pytorchJobInformerFactory, *opt)
+
+	pgClient, err := dynamic.NewForConfig(kcfg)
+	if err != nil {
+		return err
+	}
+	tc.SetPodGroupClient(pgClient)
 
 	// Start informer goroutines.
 	go kubeInformerFactory.Start(stopCh)
